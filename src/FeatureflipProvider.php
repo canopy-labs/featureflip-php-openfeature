@@ -1,0 +1,182 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Featureflip\OpenFeature;
+
+use Featureflip\EvaluationDetail;
+use Featureflip\FeatureflipClient;
+use OpenFeature\implementation\provider\AbstractProvider;
+use OpenFeature\interfaces\flags\EvaluationContext;
+use OpenFeature\interfaces\provider\ErrorCode;
+use OpenFeature\interfaces\provider\ResolutionDetails;
+use Throwable;
+
+/**
+ * An OpenFeature provider backed by the Featureflip PHP server SDK.
+ *
+ * ```php
+ * $client = FeatureflipClient::get($sdkKey, $config);
+ * OpenFeatureAPI::getInstance()->setProvider(new FeatureflipProvider($client));
+ *
+ * $enabled = OpenFeatureAPI::getInstance()
+ *     ->getClient()
+ *     ->getBooleanValue('new-checkout', false, $context);
+ * ```
+ *
+ * Unlike the Java, .NET and Go providers there is no SDK-key constructor. The
+ * PHP SDK's core requires caller-supplied PSR-18, PSR-17 and PSR-16
+ * implementations and throws without them, so a key-only form would have to
+ * choose an HTTP client and a cache on the application's behalf. Passing the
+ * client in is also the idiomatic PHP shape — it is a service-container
+ * object, and an application evaluating flags through both the SDK and
+ * OpenFeature should share one.
+ *
+ * The provider never closes the client: the caller owns it.
+ */
+final class FeatureflipProvider extends AbstractProvider
+{
+    protected static string $NAME = 'featureflip-php';
+
+    public function __construct(private readonly FeatureflipClient $client)
+    {
+    }
+
+    public function resolveBooleanValue(
+        string $flagKey,
+        bool $defaultValue,
+        ?EvaluationContext $context = null,
+    ): ResolutionDetails {
+        return $this->resolve(
+            $flagKey,
+            $defaultValue,
+            $context,
+            ResolutionMapping::matchesBoolean(...),
+            'boolean',
+        );
+    }
+
+    public function resolveStringValue(
+        string $flagKey,
+        string $defaultValue,
+        ?EvaluationContext $context = null,
+    ): ResolutionDetails {
+        return $this->resolve(
+            $flagKey,
+            $defaultValue,
+            $context,
+            ResolutionMapping::matchesString(...),
+            'string',
+        );
+    }
+
+    public function resolveIntegerValue(
+        string $flagKey,
+        int $defaultValue,
+        ?EvaluationContext $context = null,
+    ): ResolutionDetails {
+        return $this->resolve(
+            $flagKey,
+            $defaultValue,
+            $context,
+            ResolutionMapping::matchesInteger(...),
+            'integer',
+            ResolutionMapping::coerceInteger(...),
+        );
+    }
+
+    public function resolveFloatValue(
+        string $flagKey,
+        float $defaultValue,
+        ?EvaluationContext $context = null,
+    ): ResolutionDetails {
+        return $this->resolve(
+            $flagKey,
+            $defaultValue,
+            $context,
+            ResolutionMapping::matchesFloat(...),
+            'float',
+            static fn (int|float $value): float => (float) $value,
+        );
+    }
+
+    /** @param array<array-key, mixed> $defaultValue */
+    public function resolveObjectValue(
+        string $flagKey,
+        array $defaultValue,
+        ?EvaluationContext $context = null,
+    ): ResolutionDetails {
+        return $this->resolve(
+            $flagKey,
+            $defaultValue,
+            $context,
+            ResolutionMapping::matchesObject(...),
+            'object',
+        );
+    }
+
+    /**
+     * Evaluate one flag and map the result, enforcing the requested type.
+     *
+     * Reads untyped through variationDetail() rather than a typed accessor.
+     * The typed accessors narrow a wrong-typed value to the caller's default,
+     * which would make TYPE_MISMATCH indistinguishable from a correct
+     * evaluation that happened to return the default. Reading untyped leaves
+     * the type decision here, where the requested type is known.
+     *
+     * @param callable(mixed): bool   $matchesType
+     * @param ?callable(mixed): mixed $narrow Applied to a value that passed the
+     *                                        guard, where the interface's
+     *                                        return type is narrower than what
+     *                                        JSON can produce.
+     */
+    private function resolve(
+        string $flagKey,
+        mixed $defaultValue,
+        ?EvaluationContext $context,
+        callable $matchesType,
+        string $expectedType,
+        ?callable $narrow = null,
+    ): ResolutionDetails {
+        try {
+            $detail = $this->client->variationDetail(
+                $flagKey,
+                ContextMapping::toFeatureflipContext($context),
+                $defaultValue,
+            );
+        } catch (Throwable $error) {
+            // The SDK fails safe internally rather than throwing, so this is
+            // belt and braces — but a provider that let an exception escape
+            // would take down the caller's request over a flag read.
+            return ResolutionMapping::error($defaultValue, ErrorCode::GENERAL(), $error->getMessage());
+        }
+
+        // On an error reason the caller's default is substituted downstream, so
+        // the guard is skipped: the SDK's error details can carry a wrong-typed
+        // off-variation value, and guarding it would report a genuine error as
+        // a type mismatch.
+        if (ResolutionMapping::errorCodeFor($detail->reason) !== null) {
+            return ResolutionMapping::toResolutionDetails($detail, $defaultValue);
+        }
+
+        if (!$matchesType($detail->value)) {
+            return ResolutionMapping::error(
+                $defaultValue,
+                ErrorCode::TYPE_MISMATCH(),
+                sprintf("Flag '%s' did not resolve to a %s value", $flagKey, $expectedType),
+            );
+        }
+
+        if ($narrow !== null) {
+            $detail = new EvaluationDetail(
+                $narrow($detail->value),
+                $detail->reason,
+                $detail->ruleId,
+                $detail->variationKey,
+                $detail->prerequisiteKey,
+            );
+        }
+
+        return ResolutionMapping::toResolutionDetails($detail, $defaultValue);
+    }
+}

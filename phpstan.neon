@@ -1,0 +1,21 @@
+# Static analysis for the Featureflip OpenFeature provider.
+#
+# Level 8 with no ignored errors. This matches the tier the sibling providers
+# hold — the Python provider runs mypy with `strict = true` — and covers tests
+# as well as src, which the Python config does not.
+#
+# Level 9 is deliberately not used. Its five findings here are all the same
+# thing: a provider's whole job is carrying `mixed` values decoded from flag
+# JSON to OpenFeature's ResolutionDetails, and level 9 requires narrowing that
+# the OpenFeature interfaces do not express. None of the five is a defect.
+#
+# The version range is the package's supported matrix (composer requires ^8.2,
+# CI runs 8.2/8.3/8.4).
+parameters:
+    level: 8
+    paths:
+        - src
+        - tests
+    phpVersion:
+        min: 80200
+        max: 80400

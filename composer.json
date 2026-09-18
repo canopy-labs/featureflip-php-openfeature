@@ -1,0 +1,43 @@
+{
+    "name": "featureflip/featureflip-openfeature",
+    "description": "OpenFeature provider for Featureflip, backed by the Featureflip PHP SDK",
+    "type": "library",
+    "license": "Apache-2.0",
+    "homepage": "https://featureflip.io",
+    "keywords": [
+        "feature-flags",
+        "feature-toggles",
+        "openfeature",
+        "sdk"
+    ],
+    "support": {
+        "source": "https://github.com/canopy-labs/featureflip-php-openfeature",
+        "issues": "https://github.com/canopy-labs/featureflip-php-openfeature/issues"
+    },
+    "authors": [
+        {
+            "name": "Featureflip Team",
+            "homepage": "https://featureflip.io"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "featureflip/featureflip-php": "^3.3",
+        "open-feature/sdk": "^2.3"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0 || ^13.0",
+        "phpstan/phpstan": "^2.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "Featureflip\\OpenFeature\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Featureflip\\OpenFeature\\Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "stable"
+}
