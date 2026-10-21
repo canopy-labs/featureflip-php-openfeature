@@ -45,6 +45,13 @@ client in is also the idiomatic PHP shape — it is a service-container object,
 and an application evaluating flags through both the SDK directly and through
 OpenFeature should share one.
 
+To let the provider build the client from that same `Config` instead, use
+`FeatureflipProvider::create('your-server-sdk-key', $config)`. Requests then
+carry `featureflip-openfeature-php/<version>` after the SDK's own User-Agent
+token, which is how Featureflip counts OpenFeature usage. A client you build
+yourself is sent without it unless its `Config` names the provider:
+`wrapperName: FeatureflipProvider::WRAPPER_NAME, wrapperVersion: FeatureflipProvider::VERSION`.
+
 The provider never closes the client it is given: the caller owns it and is
 responsible for calling `$client->close()` at shutdown.
 

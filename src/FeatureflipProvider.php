@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Featureflip\OpenFeature;
 
+use Featureflip\Config;
 use Featureflip\EvaluationDetail;
 use Featureflip\FeatureflipClient;
 use OpenFeature\implementation\provider\AbstractProvider;
@@ -24,13 +25,17 @@ use Throwable;
  *     ->getBooleanValue('new-checkout', false, $context);
  * ```
  *
- * Unlike the Java, .NET and Go providers there is no SDK-key constructor. The
- * PHP SDK's core requires caller-supplied PSR-18, PSR-17 and PSR-16
- * implementations and throws without them, so a key-only form would have to
- * choose an HTTP client and a cache on the application's behalf. Passing the
- * client in is also the idiomatic PHP shape — it is a service-container
- * object, and an application evaluating flags through both the SDK and
- * OpenFeature should share one.
+ * Or let the provider build the client, which also names it to Featureflip
+ * (see {@see create()}):
+ *
+ * ```php
+ * OpenFeatureAPI::getInstance()->setProvider(FeatureflipProvider::create($sdkKey, $config));
+ * ```
+ *
+ * There is no key-only form. The PHP SDK's core requires caller-supplied
+ * PSR-18, PSR-17 and PSR-16 implementations and throws without them, so the
+ * caller's `Config` must carry them; the provider will not choose an HTTP
+ * client or a cache on the application's behalf.
  *
  * The provider never closes the client: the caller owns it.
  */
@@ -38,8 +43,53 @@ final class FeatureflipProvider extends AbstractProvider
 {
     protected static string $NAME = 'featureflip-php';
 
+    /**
+     * Sent after the SDK's own token in the User-Agent by clients built with
+     * {@see create()} (#4152), so requests made through the provider can be counted
+     * apart from direct SDK use.
+     */
+    public const WRAPPER_NAME = 'featureflip-openfeature-php';
+
+    /**
+     * Packagist reads versions from git tags and composer.json carries none, so
+     * this is maintained by hand and held equal to CHANGELOG.md's newest heading
+     * by tools/check-sdk-versions. Bump both together.
+     */
+    public const VERSION = '0.2.0';
+
     public function __construct(private readonly FeatureflipClient $client)
     {
+    }
+
+    /**
+     * Builds the client from `$config`, naming this provider as the SDK's wrapper so
+     * requests read `featureflip-php/<v> featureflip-openfeature-php/<v>`.
+     *
+     * The wrapper goes on a new `Config`, so one the caller also uses for direct SDK
+     * clients is not relabelled, and a `wrapperName` the caller already set is kept:
+     * the SDK carries one, and theirs is the more specific. The SDK shares one core
+     * per SDK key, so if a client for `$sdkKey` already exists in the process, its
+     * configuration (and identity) wins, as with any other option.
+     */
+    public static function create(string $sdkKey, Config $config): self
+    {
+        return new self(FeatureflipClient::get($sdkKey, self::identified($config)));
+    }
+
+    private static function identified(Config $config): Config
+    {
+        if ($config->wrapperName !== null && $config->wrapperName !== '') {
+            return $config;
+        }
+
+        // Every Config property is a promoted constructor parameter, so its public
+        // state round-trips as named arguments and a field added later is carried
+        // over without touching this line.
+        return new Config(...[
+            ...get_object_vars($config),
+            'wrapperName' => self::WRAPPER_NAME,
+            'wrapperVersion' => self::VERSION,
+        ]);
     }
 
     public function resolveBooleanValue(
