@@ -55,7 +55,7 @@ final class FeatureflipProvider extends AbstractProvider
      * this is maintained by hand and held equal to CHANGELOG.md's newest heading
      * by tools/check-sdk-versions. Bump both together.
      */
-    public const VERSION = '0.2.0';
+    public const VERSION = '0.2.1';
 
     public function __construct(private readonly FeatureflipClient $client)
     {
